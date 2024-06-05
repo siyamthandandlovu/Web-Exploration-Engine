@@ -14,7 +14,7 @@ WORKDIR /app
 RUN addgroup --system webscraper && \
           adduser --system -G webscraper webscraper
 
-COPY webscraper webscraper/
+COPY . webscraper/
 RUN chown -R webscraper:webscraper .
 
 # You can remove this install step if you build with `--bundle` option.
