@@ -19,6 +19,10 @@
           "buildTarget": "webscraper:build:production"
         }
       }
+    },
+    "docker-build": {
+      "dependsOn": ["build"],
+      "command": "docker build -f webscraper/Dockerfile . -t webscraper"
     }
   }
 }
