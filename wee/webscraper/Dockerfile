@@ -19,6 +19,6 @@ RUN chown -R webscraper:webscraper .
 
 # You can remove this install step if you build with `--bundle` option.
 # The bundled output will include external dependencies.
-RUN npm --prefix webscraper --omit=dev -f install
+#RUN npm --prefix webscraper --omit=dev -f install
 
-CMD [ "node", "webscraper" ]
+CMD [ "nx", "webscraper" ]
