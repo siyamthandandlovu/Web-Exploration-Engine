@@ -61,7 +61,7 @@ jobs:
         uses: cypress-io/github-action@v4
         with:
           command: npx nx e2e frontend --configuration=production
-          working-directory: ./wee
+          working-directory: ./wee/frontend
         
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1
