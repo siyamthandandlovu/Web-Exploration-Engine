@@ -10,29 +10,14 @@ export class ProxyService {
   }
 
   async getProxies() {
-    const response = await axios.get('https://api.proxyscrape.com/?request=displayproxies&country=za');
-    this.proxies = response.data.split('\r\n');
+    const response = await axios.get('https://api.proxyscrape.com/?request=displayproxies&https=true');
+    this.proxies = response.data.split('\n');
   }
 
   getRandomProxy() {
     const randomIndex = Math.floor(Math.random() * this.proxies.length);
-    console.log('Using proxy:', this.proxies[randomIndex]);
+    console.log(this.proxies[randomIndex]);
     return this.proxies[randomIndex];
   }
 }
 
-@Injectable()
-export class ScraperService {
-  constructor(private proxyService: ProxyService) {}
-
-  async scrape(url: string) {
-    const proxy = this.proxyService.getRandomProxy();
-    const response = await axios.get(url, {
-      proxy: {
-        host: proxy.split(':')[0],
-        port: parseInt(proxy.split(':')[1]),
-      },
-    });
-    return response.data;
-  }
-}

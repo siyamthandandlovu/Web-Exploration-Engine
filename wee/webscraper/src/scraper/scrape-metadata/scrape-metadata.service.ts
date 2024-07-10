@@ -24,12 +24,15 @@ export class ScrapeMetadataService {
 
     let browser;
     const proxy = this.proxyService.getRandomProxy();
+    const output = `https://${proxy}`;
+    console.log('Using proxy:', output);
+    
 
     try {
       browser = await puppeteer.launch(
         {
           headless: true,
-          args: [`--ignore-certificate-errors --proxy-server=${proxy}`],
+          args: [`--proxy-server=https://${proxy}`],
         }
       );
       const page = await browser.newPage();
