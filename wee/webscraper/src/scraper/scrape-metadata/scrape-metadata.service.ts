@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Metadata, RobotsResponse, ErrorResponse } from '../models/ServiceModels';
 import puppeteer from 'puppeteer';
+import { ProxyService } from '../proxy/proxy.service';
 
 @Injectable()
 export class ScrapeMetadataService {
+  constructor(private proxyService: ProxyService) {}
+
   async scrapeMetadata(
     url: string, data: RobotsResponse
   ): Promise<Metadata | ErrorResponse> {
@@ -20,9 +23,15 @@ export class ScrapeMetadataService {
     }
 
     let browser;
+    const proxy = this.proxyService.getRandomProxy();
 
     try {
-      browser = await puppeteer.launch();
+      browser = await puppeteer.launch(
+        {
+          headless: true,
+          args: [`--ignore-certificate-errors --proxy-server=${proxy}`],
+        }
+      );
       const page = await browser.newPage();
 
       await page.goto(url, { waitUntil: 'domcontentloaded' });
