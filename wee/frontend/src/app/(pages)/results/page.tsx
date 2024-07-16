@@ -3,22 +3,23 @@ import React, { useEffect, useState, Suspense } from 'react';
 import { Card, CardBody, Image } from '@nextui-org/react';
 import {
   Button,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
+  TableHeader, TableColumn, TableBody, TableRow, TableCell,
+  Dropdown, DropdownTrigger, DropdownMenu, DropdownItem,
+  Modal, ModalContent, ModalBody, useDisclosure, Input, ModalFooter,
 } from '@nextui-org/react';
+import { FiShare, FiDownload, FiSave } from "react-icons/fi";
 import { Chip } from '@nextui-org/react';
 import { useSearchParams } from 'next/navigation';
 import WEETable from '../../components/Util/Table';
 import WEEPagination from '../../components/Util/Pagination';
 import { useRouter } from 'next/navigation';
 import { useScrapingContext } from '../../context/ScrapingContext';
+import { useUserContext } from '../../context/UserContext';
 import { InfoPopOver } from '../../components/InfoPopOver';
 import jsPDF from 'jspdf'; 
-import 'jspdf-autotable';
-import { ExportDropdown } from '../../components/ExportDropdown';
+import { saveReport } from '../../services/SaveReportService';
+import { Metadata, ErrorResponse } from '../../models/ScraperModels';
+
 interface Classifications {
   label: string;
   score: number;
@@ -37,11 +38,18 @@ export default function Results() {
   );
 }
 
+function isMetadata(data: Metadata | ErrorResponse): data is Metadata {
+  return 'title' in data || 'ogTitle' in data || 'description' in data || 'ogDescription' in data;
+}
+
 function ResultsComponent() {
+  const iconClasses = "text-xl text-default-500 pointer-events-none flex-shrink-0";
+
   const searchParams = useSearchParams();
   const url = searchParams.get('url');
 
   const { results } = useScrapingContext();
+  const { user } = useUserContext();
 
   const router = useRouter();
 
@@ -54,6 +62,11 @@ function ResultsComponent() {
   const [logo, setLogo] = useState('');
   const [imageList, setImageList] = useState<string[]>([]);
   const [summaryInfo, setSummaryInfo] = useState<SummaryInfo>();
+  const [homePageScreenShot, setHomePageScreenShot] = useState('');
+  const [addresses, setAddresses] = useState<string[]>([]);
+  const [emails, setEmails] = useState<string[]>([]);
+  const [phones, setPhones] = useState<string[]>([]);
+  const [socialLinks, setSocialLinks] = useState<string[]>([]);
 
   useEffect(() => {
     if (url) {
@@ -61,30 +74,41 @@ function ResultsComponent() {
   
       if (urlResults && urlResults[0]) {
         setWebsiteStatus(urlResults[0].domainStatus === 'live' ? 'Live' : 'Parked');
+
         if ('errorStatus' in urlResults[0].robots) {
           setIsCrawlable(false);
-        } else {
+        } 
+        else {
           setIsCrawlable(urlResults[0].robots.isUrlScrapable);
           setWebsiteStatus(urlResults[0].domainStatus === 'live' ? 'Live' : 'Parked');
-          setSummaryInfo({
-            title: urlResults[0].metadata.title || urlResults[0].metadata.ogTitle,
-            description: urlResults[0].metadata.description || urlResults[0].metadata.ogDescription
-          });
+
+          if (isMetadata(urlResults[0].metadata)) {
+            setSummaryInfo({
+              title: urlResults[0].metadata.title ?? urlResults[0].metadata.ogTitle ?? '',
+              description: urlResults[0].metadata.description ?? urlResults[0].metadata.ogDescription ?? ''
+            });
+          }
+
           setLogo(urlResults[0].logo);
           setImageList(urlResults[0].images);
-          setIndustryClassification(
-            urlResults[0].industryClassification.metadataClass
-          );
-          setDomainClassification(
-            urlResults[0].industryClassification.domainClass
-          );
+          setIndustryClassification(urlResults[0].industryClassification.metadataClass);
+          setDomainClassification(urlResults[0].industryClassification.domainClass);
+
+          const screenShotBuffer = Buffer.from(urlResults[0].screenshot, 'base64');
+          const screenShotUrl = `data:image/png;base64,${screenShotBuffer.toString('base64')}`;
+          setHomePageScreenShot(screenShotUrl);
+
+          setAddresses(urlResults[0].addresses);
+          setEmails(urlResults[0].contactInfo.emails);
+          setPhones(urlResults[0].contactInfo.phones);
+          setSocialLinks(urlResults[0].contactInfo.socialLinks);
         }
       }
     }
   }, [url]);  
 
   const backToScrapeResults = () => {
-    router.push(`/scraperesults`);
+    router.back();
   };
 
   const handleDownloadReport = () => {
@@ -224,23 +248,129 @@ function ResultsComponent() {
   const indexOfFirstImage = indexOfLastImage - itemsPerPage;
   const currentImages = imageList.slice(indexOfFirstImage, indexOfLastImage);
 
-  return (
-    <div className="min-h-screen p-4">
-      <Button
-        className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor"
-        onClick={backToScrapeResults}
-      >
-        Back
-      </Button>
 
-      <div className="mb-8 text-center">
-          <h1 className="mt-4 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
-            Results of {url}
-          </h1>
-          <div className="mt-4 flex justify-center">
-              <ExportDropdown onDownloadReport={handleDownloadReport}/>
-          </div>
-      </div>
+  // Save and Download Logic
+  const [reportName, setReportName] = useState('');
+  const [isInvalid, setIsInvalid] = useState(false);
+  const [isDisabled, setIsDisabled] = useState(true);
+  const {isOpen, onOpenChange} = useDisclosure();
+  const { isOpen: isSuccessOpen, onOpenChange: onSuccessOpenChange } = useDisclosure();
+
+  const handleInputChange = (e: { target: { value: React.SetStateAction<string>; }; }) => {
+    setReportName(e.target.value);
+    if(e.target.value.length > 0) {
+      setIsInvalid(false);
+      setIsDisabled(false);
+    }
+    else {
+      setIsInvalid(true);
+      setIsDisabled(true);
+    }
+  };
+
+  const handleSave = async (reportName: string) => {
+    reportName = reportName.trim();
+    if(reportName.length === 0) {
+      setIsInvalid(true);
+      setIsDisabled(true);
+      return;
+    }
+    const urlResults = results.filter((res) => res.url === url);
+    if (urlResults && urlResults[0]) {
+      try {
+        await saveReport({
+          reportName,
+          reportData: urlResults[0],
+          userId: user?.uuid,
+          isSummary: false,
+        });
+        onOpenChange();
+        // report saved successfully popup
+        onSuccessOpenChange();
+
+      } catch (error) {
+        console.error("Error saving report:", error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setReportName('');
+      setIsInvalid(false);
+      setIsDisabled(true);
+    }
+}, [isOpen]);
+
+
+  return (
+    <>
+      <div className="min-h-screen p-4">
+        <Button
+          className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor"
+          onClick={backToScrapeResults}
+        >
+          Back
+        </Button>
+
+        <div className="mb-8 text-center">
+            <h1 className="mt-4 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
+              Results of {url}
+            </h1>
+            <div className="mt-4 mr-4 flex justify-end">
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button 
+                    variant="flat" 
+                    startContent={<FiShare className={iconClasses}/>}
+                  >
+                    Export/Save
+                  </Button>
+                </DropdownTrigger>
+                {user ? (
+                  <DropdownMenu variant="flat" aria-label="Dropdown menu with icons">
+                    <DropdownItem
+                      key="save"
+                      startContent={<FiSave className={iconClasses}/>}
+                      description="Save the report on our website"
+                      onAction={onOpenChange}
+                      data-testid="save-report-button"
+                    >
+                      Save
+                    </DropdownItem>
+                    <DropdownItem
+                      key="download"
+                      startContent={<FiDownload className={iconClasses}/>}
+                      description="Download the report to your device"
+                      onAction={handleDownloadReport}
+                      data-testid="download-report-button"
+                    >
+                      Download
+                    </DropdownItem>
+                  </DropdownMenu> 
+                ) : (
+                  <DropdownMenu variant="flat" aria-label="Dropdown menu with icons" disabledKeys={["save"]}>
+                    <DropdownItem
+                      key="save"
+                      startContent={<FiSave className={iconClasses}/>}
+                      description="Sign up or log in to save the report on our website"
+                    >
+                      Save
+                    </DropdownItem>
+                    <DropdownItem
+                      key="download"
+                      startContent={<FiDownload className={iconClasses}/>}
+                      description="Download the report to your device"
+                      onAction={handleDownloadReport}
+                      data-testid="download-report-button"
+                    >
+                      Download
+                    </DropdownItem>
+                  </DropdownMenu> 
+                )}
+              </Dropdown>
+            </div>
+        </div>
 
       <div className="py-3">
         <h3 className="font-poppins-semibold text-lg text-jungleGreen-700 dark:text-jungleGreen-100 pb-2">
@@ -290,7 +420,8 @@ function ResultsComponent() {
           </CardBody>
         </Card>
       </div>
-
+      
+      {/* Domain Tags */}
       <div className="py-3">
         <h3 className="font-poppins-semibold text-lg text-jungleGreen-700 dark:text-jungleGreen-100 pb-2">
           Domain Tags
@@ -401,6 +532,96 @@ function ResultsComponent() {
         </WEETable>
       </div>
 
+      {/* Address and contact details */}
+      <div className='py-3'>
+        <h3 className="font-poppins-semibold text-lg text-jungleGreen-700 dark:text-jungleGreen-100 p-2">
+          Address and contact details
+        </h3>
+
+        <WEETable isStriped aria-label="Address and contact info table">
+          <TableHeader>
+            <TableColumn>CONTACT DETAILS</TableColumn>
+            <TableColumn>INFORMATION</TableColumn>
+          </TableHeader>
+          <TableBody>
+            <TableRow key="1">
+              <TableCell>Address</TableCell>
+              <TableCell>
+                {addresses && addresses.length == 0
+                  ? <p>No address available</p>
+                  :
+                  addresses.map((address, index) => (
+                    <p key={index}>{address}</p>
+                  ))
+                }
+              </TableCell>
+            </TableRow>
+            <TableRow key="2">
+              <TableCell>Email</TableCell>
+              <TableCell>
+                {emails && emails.length == 0
+                  ? <p>No email address available</p>
+                  :
+                  emails.map((email, index) => (
+                    <p key={index}>{email}</p>
+                  ))
+                }
+              </TableCell>
+            </TableRow>
+            <TableRow key="3">
+              <TableCell>Phone</TableCell>
+              <TableCell>
+                {phones && phones.length == 0
+                  ? <p>No phone numbers available</p>
+                  :
+                  phones.map((phone, index) => (
+                    <p key={index}>{phone}</p>
+                  ))
+                }
+              </TableCell>
+            </TableRow>
+            <TableRow key="4">
+              <TableCell>Social Links</TableCell>
+              <TableCell>
+                {socialLinks && socialLinks.length == 0
+                  ? <p>No social links available</p>
+                  :
+                  socialLinks.map((socialLink, index) => (
+                    <p key={index}>{socialLink}</p>
+                  ))
+                }
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </WEETable>
+      </div>
+
+      {/* Home page screenshot */}
+      <div className='py-3'>
+        <h3 className="font-poppins-semibold text-lg text-jungleGreen-700 dark:text-jungleGreen-100 p-2">
+          Home page screenshot
+        </h3>
+
+        {(homePageScreenShot && homePageScreenShot !== 'data:image/png;base64,') 
+        ? (
+            <div className="flex justify-center">
+              <div className="flex justify-center">
+                <Image
+                  alt="HomePageScreenShot"
+                  src={homePageScreenShot}
+                  className="shadow-md shadow-zinc-150 dark:shadow-zinc-900"
+                />
+              </div>
+            </div>
+          ) 
+        : (
+            <p className="p-4 rounded-lg mb-2 bg-zinc-200 dark:bg-zinc-700">
+              No homepage screenshot available.
+            </p>
+          )
+        }
+      </div>
+
       {/* Pagination of Images */}
       {imageList && imageList.length > 0 && (
         <div className="py-3">
@@ -409,27 +630,27 @@ function ResultsComponent() {
               Images
             </h3>
 
-            <label className="flex items-center text-default-400 text-small">
-              Images Per Page:
-              <select
-                value={itemsPerPage}
-                className="bg-transparent outline-none text-default-400 text-small"
-                onChange={handleItemsPerPageChange}
-                aria-label="Number of results per page"
-              >
-                <option value="4">4</option>
-                <option value="8">8</option>
-                <option value="16">16</option>
-                <option value="24">24</option>
-                <option value="36">36</option>
-                <option value="48">48</option>
-              </select>
-            </label>
-          </span>
+              <label className="flex items-center text-default-400 text-small">
+                Images Per Page :
+                <select
+                  value={itemsPerPage}
+                  className="bg-transparent outline-none text-default-400 text-small"
+                  onChange={handleItemsPerPageChange}
+                  aria-label="Number of results per page" 
+                >
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                  <option value="16">16</option>
+                  <option value="24">24</option>
+                  <option value="36">36</option>
+                  <option value="48">48</option>
+                </select>
+              </label>
+            </span>
 
           <div
             id="unique-results-image-container"
-            className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 py-6"
+            className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 py-6 pt-3"
           >
             {currentImages.map((item, index) => (
               <Card shadow="sm" key={index} id="unique-results-image">
@@ -458,12 +679,70 @@ function ResultsComponent() {
         </div>
       )}
 
-      {imageList.length === 0 && (
-        <p className="p-4 rounded-lg mb-2 bg-zinc-200 dark:bg-zinc-700">
-          No images available.
-        </p>
-      )}
-    </div>
+        {imageList.length === 0 && (
+          <p className="p-4 rounded-lg mb-2 bg-zinc-200 dark:bg-zinc-700">
+            No images available.
+          </p>
+        )}
+      </div>
+
+      {/* Confirm save */}
+      <Modal 
+        isOpen={isOpen} 
+        onOpenChange={onOpenChange}
+        placement="top-center"
+        data-testid="save-report-modal"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalBody>
+                <h1 className="text-center my-4 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
+                    Save Report
+                </h1>
+                <Input
+                  autoFocus
+                  label="Report Name"
+                  placeholder="Enter a name for the report"
+                  variant="bordered"
+                  isInvalid={isInvalid}
+                  color={isInvalid ? "danger" : "default"}
+                  errorMessage="Please provide a name for the report"
+                  value={reportName}
+                  onChange={handleInputChange}
+                />
+              </ModalBody>
+              <ModalFooter>
+                <Button className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor" onPress={onClose}
+                  data-testid="close-save-report-modal"
+                >
+                  Close
+                </Button>
+                <Button 
+                  className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor" 
+                  onPress={() => handleSave(reportName)}
+                  disabled={isDisabled}
+                  data-testid="submit-report-name"
+                  >
+                  Save
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+       {/* successfull save */}
+       <Modal isOpen={isSuccessOpen} onOpenChange={onSuccessOpenChange} className="font-poppins-regular">
+          <ModalContent>
+              <ModalBody>
+                  <h1 className="text-center my-4 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
+                      Report saved successfully
+                  </h1>
+              </ModalBody>
+          </ModalContent>
+      </Modal>
+    </>
   );
 }
 

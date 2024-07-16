@@ -14,11 +14,12 @@ import {
   Chip,
   Button,
   Spinner,
+  Selection
 } from '@nextui-org/react';
 import { useRouter } from 'next/navigation';
 import WEETable from '../../components/Util/Table';
 import { useScrapingContext } from '../../context/ScrapingContext';
-import Scraping from '../../models/ScrapingModel';
+import { ScraperResult } from '../../models/ScraperModels';
 import Link from 'next/link';
 import { generateSummary } from '../../services/SummaryService';
 
@@ -32,7 +33,7 @@ function ResultsComponent() {
     processedUrls,
     setProcessedUrls,
     processingUrls,
-    setProcessingUrls,
+    setProcessingUrls
   } = useScrapingContext();
   const [isLoading, setIsLoading] = React.useState(true);
 
@@ -58,11 +59,11 @@ function ResultsComponent() {
     // Apply crawlable filter
     if (selectedCrawlableFilter === 'Yes') {
       filteredUrls = filteredUrls.filter(
-        (url) => url.robots && url.robots.isUrlScrapable
+        (url) => url.robots && 'isUrlScrapable' in url.robots && url.robots.isUrlScrapable
       );
     } else if (selectedCrawlableFilter === 'No') {
       filteredUrls = filteredUrls.filter(
-        (url) => url.robots && !url.robots.isUrlScrapable
+        (url) => url.robots && 'isUrlScrapable' in url.robots && !url.robots.isUrlScrapable
       );
     }
 
@@ -139,9 +140,9 @@ function ResultsComponent() {
       const response = await fetch(
         `http://localhost:3000/api/scraper?url=${encodeURIComponent(url)}`
       );
-      const data = (await response.json()) as Scraping;
+      const data = (await response.json()) as ScraperResult;
       console.log('Response', data);
-      setResults((prevResults: Scraping[]) => [...prevResults, data]);
+      setResults((prevResults: ScraperResult[]) => [...prevResults, data]);
     } catch (error) {
       console.error('Error when scraping website:', error);
     }
@@ -174,8 +175,12 @@ function ResultsComponent() {
     router.push(`/summaryreport`);
   };
 
+  const handleComparisonPage = () => {
+    router.push(`/comparison`);
+  };
+
   return (
-    <div className="p-4">
+    <div className="p-4 min-h-screen">
       <div className="flex justify-center">
         <WEEInput
           data-testid="search-urls"
@@ -196,6 +201,7 @@ function ResultsComponent() {
           label="Live/Parked"
           className="w-full pb-3 md:w-1/3"
           onChange={handleStatusFilterChange}
+          data-testid="status-filter"
         >
           <SelectItem key={'Parked'}>Parked</SelectItem>
           <SelectItem key={'Live'}>Live</SelectItem>
@@ -205,6 +211,7 @@ function ResultsComponent() {
           label="Crawlable"
           className="w-full pb-3 md:w-1/3"
           onChange={handleCrawlableFilterChange}
+          data-testid="crawlable-filter"
         >
           <SelectItem key={'Yes'}>Yes</SelectItem>
           <SelectItem key={'No'}>No</SelectItem>
@@ -265,7 +272,7 @@ function ResultsComponent() {
         }}
       >
         <TableHeader>
-          <TableColumn key="name" className="rounded-lg sm:rounded-none">
+          <TableColumn key="name" className="rounded-r-lg sm:rounded-none">
             URL
           </TableColumn>
           <TableColumn key="role" className="text-center hidden sm:table-cell">
@@ -310,17 +317,35 @@ function ResultsComponent() {
         </TableBody>
       </WEETable>
 
-      <h1 className="my-4 mt-6 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
-        Summary
-      </h1>
-      <Button
-        data-testid="btn-report-summary"
-        className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor disabled:bg-jungleGreen-600 disabled:dark:bg-jungleGreen-300 disabled:cursor-wait"
-        onClick={handleSummaryPage}
-        disabled={isLoading}
-      >
-        View overall summary report
-      </Button>
+      <div className='sm:flex sm:justify-between'>
+          <div>
+            <h1 className="my-4 mt-6 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
+              Summary
+            </h1>
+            <Button
+              data-testid="btn-report-summary"
+              className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor disabled:bg-jungleGreen-600 disabled:dark:bg-jungleGreen-300 disabled:cursor-wait"
+              onClick={handleSummaryPage}
+              disabled={isLoading}
+            >
+              View overall summary report
+            </Button>
+          </div>
+
+          <div>
+            <h1 className="my-4 mt-6 font-poppins-bold text-2xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
+              Comparison
+            </h1>
+            <Button
+              data-testid="btn-comparison-summary"
+              className="text-md font-poppins-semibold bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor disabled:bg-jungleGreen-600 disabled:dark:bg-jungleGreen-300 disabled:cursor-wait"
+              onClick={handleComparisonPage}
+            >
+              View comparison report
+            </Button>
+          </div>
+      </div>
+
     </div>
   );
 }

@@ -6,11 +6,17 @@ import { MdErrorOutline } from "react-icons/md";
 import WEETextarea from "../components/Util/Textarea";
 import { useScrapingContext } from "../context/ScrapingContext";
 
+// Models
+import { ScraperResult, Summary } from "../models/ScraperModels";
+
+
 export default function Home() {
-    const { setUrls, setProcessedUrls, setProcessingUrls } = useScrapingContext();
+    const { setUrls, setProcessedUrls, setProcessingUrls, setResults, setSummaryReport } = useScrapingContext();
     const router = useRouter();
     const [url, setUrl] = useState('');
     const [error, setError] = useState('');
+
+        
    
     const isValidUrl = (urlString: string) => {
         try {
@@ -53,13 +59,15 @@ export default function Home() {
       // Clear the processing and processed urls
       setProcessedUrls([]);
       setProcessingUrls([]);
+      setResults((prevResults: ScraperResult[]) => []);
+      setSummaryReport({} as Summary);
 
       // Navigate to Results page with the entered URL as query parameter
       router.push(`/scraperesults`);
     };
 
     return (
-      <div className="p-4 flex flex-col items-center">
+      <div className="p-4 flex flex-col items-center min-h-screen">
         <div className="mb-4 md:my-8 text-center">
           <h1 className="mt-8 mb-5 font-poppins-bold text-4xl lg:text-5xl text-jungleGreen-800 dark:text-dark-primaryTextColor">
             The Web Exploration Engine
