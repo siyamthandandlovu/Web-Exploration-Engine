@@ -1,8 +1,7 @@
 import React from 'react';
-//import { logger } from '@/logger';
 import { logger } from '../../../logger';
 export default function Footer() {
-  logger.info('Footer Created called ');
+  logger.info('Footer called');
   return (
     <footer className="bg-jungleGreen-700 text-dark-primaryTextColor dark:bg-jungleGreen-400 dark:text-primaryTextColor">
       <div className="mx-auto w-full max-w-screen-xl p-4 py-6 lg:py-8">

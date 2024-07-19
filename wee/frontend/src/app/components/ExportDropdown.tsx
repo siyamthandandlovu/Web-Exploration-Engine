@@ -1,6 +1,7 @@
 import React from 'react';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Button } from '@nextui-org/react';
 import { FiShare, FiDownload, FiSave } from 'react-icons/fi';
+import { logger } from '../../../logger';
 
 interface ExportDropdownProps {
   onDownloadReport: () => void;
@@ -8,7 +9,7 @@ interface ExportDropdownProps {
 
 export const ExportDropdown: React.FC<ExportDropdownProps> = ({ onDownloadReport }) => {
   const iconClasses = 'text-xl text-default-500 pointer-events-none flex-shrink-0';
-
+  logger.info('ExportDropdown called', onDownloadReport);
   return (
     <Dropdown>
       <DropdownTrigger>
