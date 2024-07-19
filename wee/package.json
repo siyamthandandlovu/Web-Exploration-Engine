@@ -1,5 +1,10 @@
 {
   "name": "@wee/source",
+  "browser": {
+    "fs": false,
+    "os": false,
+    "path": false
+  },
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
