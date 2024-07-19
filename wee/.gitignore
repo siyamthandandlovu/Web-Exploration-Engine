@@ -65,3 +65,4 @@ out
 
 # Logging - prometheus and grafan
 /logging/prometheus
+frontend/app.log
