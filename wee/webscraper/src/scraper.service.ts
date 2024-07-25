@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { Cache } from 'cache-manager';
 
 // Services
 import { RobotsService } from './robots/robots.service';
@@ -12,7 +13,6 @@ import { ScrapeContactInfoService } from './scrape-contact-info/scrape-contact-i
 import { ScrapeAddressService } from './scrape-address/scrape-address.service';
 import { SeoAnalysisService } from './seo-analysis/seo-analysis.service';
 
-
 // Models
 import {
   ErrorResponse,
@@ -24,6 +24,7 @@ import {
 @Injectable()
 export class ScraperService {
   constructor(
+    @Inject('CACHE_MANAGER') private cacheManager: Cache,
     private readonly robotsService: RobotsService,
     private readonly metadataService: ScrapeMetadataService,
     private readonly scrapeStatusService: ScrapeStatusService,
@@ -33,12 +34,25 @@ export class ScraperService {
     private readonly screenshotService: ScreenshotService,
     private readonly scrapeContactInfoService: ScrapeContactInfoService,
     private readonly scrapeAddressService: ScrapeAddressService,
-    private readonly seoAnalysisService: SeoAnalysisService 
-
+    private readonly seoAnalysisService: SeoAnalysisService,
   ) {}
 
   async scrape(url: string) {
     const start = performance.now();
+
+    const cachedData:string = await this.cacheManager.get(url);
+    if (cachedData) {
+      const end = performance.now();
+      const times = (end - start) / 1000;
+      console.log('CACHE HIT', times);
+      const dataFromCache = JSON.parse(cachedData);
+
+      // update the time field of the object being returned from cache
+      dataFromCache.time = parseFloat(times.toFixed(4));      
+      return dataFromCache;
+    }
+    
+    console.log('CACHE MISS - SCRAPE');
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = {
@@ -169,8 +183,10 @@ export class ScraperService {
 
     const end = performance.now();
     const time = (end - start) / 1000;
-    data.time = parseFloat(time.toFixed(2));
+    data.time = parseFloat(time.toFixed(4));
 
+    // set the data in the cache
+    await this.cacheManager.set(url, JSON.stringify(data));
     return data;
   }
 
@@ -274,7 +290,9 @@ export class ScraperService {
   }
   async seoAnalysis(url: string) {
     const htmlContent = await this.seoAnalysisService.fetchHtmlContent(url);
-    const [metaDescriptionAnalysis,titleTagsAnalysis,headingAnalysis,imageAnalysis,uniqueContentAnalysis,internalLinksAnalysis,siteSpeedAnalysis, mobileFriendlinessAnalysis,
+    const [metaDescriptionAnalysis,titleTagsAnalysis,headingAnalysis,imageAnalysis,uniqueContentAnalysis
+      ,internalLinksAnalysis,siteSpeedAnalysis, mobileFriendlinessAnalysis,structuredDataAnalysis,
+      indexabilityAnalysis,XMLSitemapAnalysis,canonicalTagAnalysis,lighthouseAnalysis,
     ] = await Promise.all([
       this.seoAnalysisService.analyzeMetaDescription(htmlContent,url),
       this.seoAnalysisService.analyzeTitleTag(htmlContent),
@@ -284,6 +302,11 @@ export class ScraperService {
       this.seoAnalysisService.analyzeInternalLinks(htmlContent),
       this.seoAnalysisService.analyzeSiteSpeed(url),
       this.seoAnalysisService.analyzeMobileFriendliness(url),
+      this.seoAnalysisService.analyzeStructuredData(htmlContent),
+      this.seoAnalysisService.analyzeIndexability(htmlContent),
+      this.seoAnalysisService.analyzeXmlSitemap(url),
+      this.seoAnalysisService.analyzeCanonicalTags(htmlContent),
+      this.seoAnalysisService.runLighthouse(url),
     ]);
   
     return {
@@ -295,8 +318,11 @@ export class ScraperService {
       internalLinksAnalysis,
       siteSpeedAnalysis,
       mobileFriendlinessAnalysis,
-
-      
+      structuredDataAnalysis,
+      indexabilityAnalysis,
+      XMLSitemapAnalysis,
+      canonicalTagAnalysis,
+      lighthouseAnalysis,      
    };
   }
 }
