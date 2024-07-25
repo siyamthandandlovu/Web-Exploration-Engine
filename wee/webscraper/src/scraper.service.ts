@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
+import puppeteer, { Browser } from 'puppeteer';
 
 // Services
 import { RobotsService } from './robots/robots.service';
@@ -13,13 +14,9 @@ import { ScrapeContactInfoService } from './scrape-contact-info/scrape-contact-i
 import { ScrapeAddressService } from './scrape-address/scrape-address.service';
 import { SeoAnalysisService } from './seo-analysis/seo-analysis.service';
 
-// Models
-import {
-  ErrorResponse,
-  RobotsResponse,
-  Metadata,
-  IndustryClassification,
-} from './models/ServiceModels';
+// PipelineData
+import { ErrorResponse, Metadata, RobotsResponse } from './models/ServiceModels';
+import { PipelineDataClass } from './pipelineData';
 
 @Injectable()
 export class ScraperService {
@@ -40,6 +37,7 @@ export class ScraperService {
   async scrape(url: string) {
     const start = performance.now();
 
+    // check if data is in cache
     const cachedData:string = await this.cacheManager.get(url);
     if (cachedData) {
       const end = performance.now();
@@ -54,55 +52,44 @@ export class ScraperService {
     
     console.log('CACHE MISS - SCRAPE');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = {
-      url: '',
-      domainStatus: '',
-      robots: null as RobotsResponse | ErrorResponse | null,
-      metadata: null as Metadata | ErrorResponse | null,
-      industryClassification: null as IndustryClassification | null,
-      logo: '',
-      images: [],
-      slogan: '',
-      contactInfo: { emails: [], phones: [] },
-      time: 0,
-      addresses: [],
-      screenshot:'' as string | ErrorResponse,
-      seoAnalysis: null as any,
-    };
+    // create a new PipelineData object
+    const browser: Browser = await puppeteer.launch();
+    const page = await browser.newPage();
+    const pipelineData = new PipelineDataClass(url);
+    pipelineData.page = page;
 
     // validate url
 
-    data.url = url;
+    pipelineData.data.url = url;
 
     // scrape robots.txt file & url validation
     // scrape web status - live, parked, under construction
-    const robotsPromise = this.robotsService.readRobotsFile(data.url);
-    const statusPromise = this.scrapeStatusService.scrapeStatus(data.url);
+    const robotsPromise = this.robotsService.readRobotsFile(pipelineData.data.url);
+    const statusPromise = this.scrapeStatusService.scrapeStatus(pipelineData.data.url);
 
     const [robotsResponse, status] = await Promise.all([
       robotsPromise,
       statusPromise,
     ]);
-    data.domainStatus = status;
+    pipelineData.data.domainStatus = status;
 
     // blocking - check for error response
     // some kind of retry mechanism here?
     if ('errorStatus' in robotsResponse) {
-      data.robots = robotsResponse as ErrorResponse;
-      return data;
+      pipelineData.data.robots = robotsResponse as ErrorResponse;
+      return pipelineData.data;
     }
 
-    data.robots = robotsResponse as RobotsResponse;
+    pipelineData.data.robots = robotsResponse as RobotsResponse;
 
     // scrape metadata & html - can we do this in parallel?
     // metadata checks if url is allowed to be scraped
     const metadataResponse = await this.metadataService.scrapeMetadata(
-      data.url,
-      data.robots
+      pipelineData.data.url,
+      pipelineData.data.robots
     );
     if ('errorStatus' in metadataResponse) {
-      data.metadata = {
+      pipelineData.data.metadata = {
         title: null,
         description: null,
         keywords: null,
@@ -111,40 +98,40 @@ export class ScraperService {
         ogImage: null,
       } as Metadata;
     } else {
-      data.metadata = metadataResponse as Metadata;
+      pipelineData.data.metadata = metadataResponse as Metadata;
     }
 
     // classify industry based on metadata and domain name
     const industryClassificationPromise =
       this.industryClassificationService.classifyIndustry(
-        data.url,
-        data.metadata
+        pipelineData.data.url,
+        pipelineData.data.metadata
       );
 
     // scrape logo
     const logoPromise = this.scrapeLogoService.scrapeLogo(
-      data.url,
-      data.metadata,
-      data.robots
+      pipelineData.data.url,
+      pipelineData.data.metadata,
+      pipelineData.data.robots
     );
 
     // scrape images - doesn't use metadata -- need to check if scraping images is allowed
     const imagesPromise = this.scrapeImagesService.scrapeImages(
-      data.url,
-      data.robots
+      pipelineData.data.url,
+      pipelineData.data.robots
     );
     const contactInfoPromise = this.scrapeContactInfoService.scrapeContactInfo(
-      data.url,
-      data.robots
+      pipelineData.data.url,
+      pipelineData.data.robots
     );
     const addressPromise = this.scrapeAddressService.scrapeAddress(
-      data.url,
-      data.robots
+      pipelineData.data.url,
+      pipelineData.data.robots
     );
 
     // get screenshot
-    const screenshotPromise = this.getScreenshot(data.url);
-    const seoAnalysisPromise = this.seoAnalysisService.seoAnalysis(data.url,data.robots);
+    const screenshotPromise = this.getScreenshot(pipelineData.data.url);
+    const seoAnalysisPromise = this.seoAnalysisService.seoAnalysis(pipelineData.data.url, pipelineData.data.robots);
     const [
       industryClassification,
       logo,
@@ -162,37 +149,28 @@ export class ScraperService {
       screenshotPromise,
       seoAnalysisPromise,
     ]);
-    data.industryClassification = industryClassification;
-    data.logo = logo;
-    data.images = images;
-    data.contactInfo = contactInfo;
-    data.addresses = addresses.addresses;
+    pipelineData.data.industryClassification = industryClassification;
+    pipelineData.data.logo = logo;
+    pipelineData.data.images = images;
+    pipelineData.data.contactInfo = contactInfo;
+    pipelineData.data.addresses = addresses.addresses;
     
     if ('errorStatus' in screenshot) {
-      data.screenshot = ''; // Handle error case appropriately
+      pipelineData.data.screenshot = ''; // Handle error case appropriately
     } else {
-      data.screenshot = (screenshot as { screenshot: string }).screenshot; // Assign the screenshot URL
+      pipelineData.data.screenshot = (screenshot as { screenshot: string }).screenshot; // Assign the screenshot URL
     }
 
-    data.seoAnalysis = seoAnalysis;
-    // scrape slogan
-
-    // scrape images
-
-    // do we want to perform analysis in the scraper service? - probably not
+    pipelineData.data.seoAnalysis = seoAnalysis;
+    
 
     const end = performance.now();
     const time = (end - start) / 1000;
-    data.time = parseFloat(time.toFixed(4));
+    pipelineData.data.time = parseFloat(time.toFixed(4));
 
     // set the data in the cache
-    await this.cacheManager.set(url, JSON.stringify(data));
-    return data;
-  }
-
-  scrapeUrls(urls: string[]) {
-    // scrape multiple urls in parallel
-    // return data
+    await this.cacheManager.set(url, JSON.stringify(pipelineData.data));
+    return pipelineData.data;
   }
 
   async readRobotsFile(url: string) {
